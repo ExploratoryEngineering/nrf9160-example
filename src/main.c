@@ -40,6 +40,13 @@ error:
 	return false;
 }
 
+int min(int a, int b) {
+	if (a < b) {
+		return a;
+	}
+	return b;
+}
+
 int exec_at_cmd(int sock, const char *cmd, char *response, int response_len) {
 	if (send(sock, cmd, strlen(cmd), 0) < 0) {
 		printf("Error sending: %d\n", errno);
