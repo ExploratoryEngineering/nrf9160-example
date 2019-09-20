@@ -5,152 +5,99 @@
 #include <errno.h>
 #include <stdio.h>
 #include <net/socket.h>
+#include <at_cmd.h>
+#include <at_cmd_parser.h>
 
-int min(int a, int b) {
-	if (a < b) {
-		return a;
+K_SEM_DEFINE(registered_on_network_sem, 0, 1);
+
+static void at_cmd_notification_handler(char *response) {
+	if (memcmp(response, "+CEREG", 6) != 0) {
+		return;
 	}
-	return b;
+
+	struct at_param_list params = {0};
+	if (at_params_list_init(&params, 1) != 0) {
+		printf("Error initializing AT param list.\n");
+		return;
+	}
+	if (at_parser_params_from_str(&response[sizeof("+CEREG:")], &params) != 0) {
+		printf("Error parsing response: %s\n", response);
+		goto cleanup;
+	}
+	u16_t status = 0;
+	if (at_params_short_get(&params, 0, &status) != 0) {
+		printf("Error getting short param: %s\n", response);
+		goto cleanup;
+	}
+	if (status == 1) {
+		k_sem_give(&registered_on_network_sem);
+	}
+
+cleanup:
+	at_params_list_free(&params);
 }
 
-int exec_at_cmd(int sock, const char *cmd, char *response, int response_len) {
-	if (send(sock, cmd, strlen(cmd), 0) < 0) {
-		printf("Error sending: %d\n", errno);
-		return -1;
+static bool subscribe_network_status_notifications() {
+	if (at_cmd_write("AT+CEREG=1", NULL, 0, NULL) != 0) {
+		printf("Error subscribing to network status notifications.\n");
+		return false;
 	}
-
-	char buf[1024];
-	int n = recv(sock, buf, sizeof(buf), 0);
-	if (n < 0) {
-		printf("Error receiving: %d\n", errno);
-		return -1;
-	}
-
-	int ret_response_len = 0;
-
-	char *p = buf;
-	char *end = buf + n;
-	while (p < end) {
-		if (memcmp(p, "ERROR", 5) == 0) {
-			printf("Command '%s' responded with ERROR.\n", cmd);
-			return -1;
-		}
-		if (memcmp(p, "OK", 2) == 0) {
-			break;
-		}
-
-		char *next = memchr(p, '\r', end-p);
-		if (next == NULL) {
-			next = end;
-		}
-		if (response != NULL) {
-			ret_response_len = min(response_len, next-p);
-			memcpy(response, p, ret_response_len);
-		}
-
-		// skip "\r\n"
-		p = next + 2;
-	}
-
-	return ret_response_len;
+	at_cmd_set_notification_handler(at_cmd_notification_handler);
+	return true;
 }
 
 static bool systemmode_lte() {
-	int sock = socket(AF_LTE, 0, NPROTO_AT);
-	if (sock < 0) {
-		printf("Error opening socket: %d\n", errno);
+	if (at_cmd_write("AT+CFUN=4", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT%XSYSTEMMODE=1,0,0,0", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT+CFUN=1", NULL, 0, NULL) != 0) {
+		printf("Error enabling system mode LTE: %d\n", errno);
 		return false;
 	}
 
-	if (exec_at_cmd(sock, "AT+CFUN=4", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT%XSYSTEMMODE=1,0,0,0", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CFUN=1", NULL, 0) < 0) {
-		printf("Error enabling system mode LTE: %d\n", errno);
-		goto error;
+	if (k_sem_take(&registered_on_network_sem, K_SECONDS(60)) != 0) {
+		printf("Did not register on network within 60 seconds.\n");
+		return false;
 	}
 
-	while (true) {
-		char resp[32];
-		int n = exec_at_cmd(sock, "AT+CEREG?", resp, sizeof(resp));
-		if (n < 0) {
-			goto error;
-		}
-		if (n >= 10 && memcmp(resp, "+CEREG", 6) == 0 && resp[10] == '1') {
-			break;
-		}
-	}
-
-	close(sock);
 	return true;
-
-error:
-	close(sock);
-	return false;
 }
 
 bool print_imei_imsi() {
-	int sock = socket(AF_LTE, 0, NPROTO_AT);
-	if (sock < 0) {
-		printf("Error opening socket: %d\n", errno);
+	char resp[32] = {0};
+	int err = at_cmd_write("AT+CGSN", resp, sizeof(resp), NULL);
+	if (err != 0) {
+		printf("Error getting IMEI: %d.\n", err);
 		return false;
 	}
-
-	char resp[16];
-	int n = exec_at_cmd(sock, "AT+CGSN", resp, sizeof(resp));
-	if (n < 0) {
-		printf("Error getting IMEI.\n");
-		goto error;
-	}
-	resp[n] = '\0';
+	resp[15] = 0;
 	printf("IMEI: %s\n", resp);
 
-	n = exec_at_cmd(sock, "AT+CIMI", resp, sizeof(resp));
-	if (n < 0) {
-		printf("Error getting IMSI.\n");
-		goto error;
+	err = at_cmd_write("AT+CIMI", resp, sizeof(resp), NULL);
+	if (err != 0) {
+		printf("Error getting IMSI: %d.\n", err);
+		return false;
 	}
-	resp[n] = '\0';
+	resp[15] = 0;
 	printf("IMSI: %s\n", resp);
 
-	close(sock);
 	return true;
-
-error:
-	close(sock);
-	return false;
 }
 
 bool set_apn() {
-	int sock = socket(AF_LTE, 0, NPROTO_AT);
-	if (sock < 0) {
-		printf("Error opening socket: %d\n", errno);
+	if (at_cmd_write("AT+CFUN=1", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT+CGATT=0", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT+CGDCONT=0,\"IP\",\"mda.ee\"", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT+CGDCONT?", NULL, 0, NULL) != 0 ||
+		at_cmd_write("AT+CGATT=1", NULL, 0, NULL) != 0) {
 		return false;
 	}
 
-	if (exec_at_cmd(sock, "AT+CFUN=1", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGATT=0", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGDCONT=0,\"IP\",\"mda.ee\"", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGDCONT?", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGATT=1", NULL, 0) < 0) {
-		goto error;
-	}
-	while (true) {
-		char resp[32];
-		int n = exec_at_cmd(sock, "AT+CEREG?", resp, sizeof(resp));
-		if (n < 0) {
-			goto error;
-		}
-		if (n >= 10 && memcmp(resp, "+CEREG", 6) == 0 && resp[10] == '1') {
-			break;
-		}
+	if (k_sem_take(&registered_on_network_sem, K_SECONDS(60)) != 0) {
+		printf("Did not register on network within 60 seconds.\n");
+		return false;
 	}
 
-	close(sock);
 	return true;
-
-error:
-	close(sock);
-	return false;
 }
 
 bool send_message(const char *message) {
@@ -168,13 +115,19 @@ bool send_message(const char *message) {
 
 	if (sendto(sock, message, strlen(message), 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0) {
 		printf("Error sending: %d\n", errno);
+		close(sock);
 		return false;
 	}
 
+	close(sock);
 	return true;
 }
 
 void main() {
+	if (!subscribe_network_status_notifications()) {
+		goto end;
+	}
+
 	if (!systemmode_lte()) {
 		printf("Failed to set system mode LTE.\n");
 		goto end;
