@@ -1,6 +1,6 @@
 west:
   url: https://github.com/zephyrproject-rtos/west
-  revision: v0.5.8
+  revision: v0.6.0
 
 manifest:
   defaults:
@@ -20,27 +20,22 @@ manifest:
     - name: fw-nrfconnect-zephyr
       path: zephyr
       west-commands: scripts/west-commands.yml
-      revision: 3c4f27282002e634d60216f23fb341317a4b199f
+      revision: 1c3a001f62e6c51693b67e4f7ee7f66111d31801
     - name: fw-nrfconnect-nrf
       path: nrf
-      revision: 15bd29344ba0a550ceddf0f04242e0f76aabb316
-    - name: fw-nrfconnect-mcuboot
-      path: mcuboot
-      revision: 4b919890cc848316304b81d9e160fe5a10ce3764
-    - name: fw-nrfconnect-tinycbor
-      path: modules/lib/tinycbor
-      revision: ef1f9c3d87474ec3570b1f46e91fd4b54a4fb421
+      revision: f99a3a56ac0204c985117c201ac37b050cf6db08
     - name: nrfxlib
       path: nrfxlib
-      revision: v0.4.0
-    - name: cmock
-      path: test/cmock
-      revision: c243b9a7a7b3c471023193992b46cf1bd1910450
-      remote: throwtheswitch
-    - name: unity
-      path: test/cmock/vendor/unity
-      revision: 031f3bbe45f8adf504ca3d13e6f093869920b091
-      remote: throwtheswitch
+      revision: 35120d32233dc354c89d8c62eaa6267093c7e35b
+    - name: fw-nrfconnect-mcuboot
+      path: mcuboot
+      revision: 0c59d5f4bb2de49b5491b018fc7fd41afc154f1b
     - name: mbedtls
+      repo-path: fw-nrfconnect-mbedtls
+      path: modules/crypto/mbedtls
+      revision: 900c7eea92e45adba1067e044ec705d4541c84a5
+    - name: mbedtls-nrf
+      path: mbedtls
+      repo-path: mbedtls
       revision: mbedtls-2.13.1
       remote: armmbed

@@ -6,40 +6,6 @@
 #include <stdio.h>
 #include <net/socket.h>
 
-#if !defined(CONFIG_LTE_LINK_CONTROL)
-#error "Missing CONFIG_LTE_LINK_CONTROL"
-#endif /* !defined(CONFIG_LTE_LINK_CONTROL) */
-
-bool send_message(const char *message) {
-	int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (sock < 0) {
-		printf("Error opening socket: %d\n", errno);
-		return false;
-	}
-
-	struct addrinfo *ai;
-	int err = getaddrinfo("172.16.15.14", NULL, NULL, &ai);
-	if (err < 0) {
-		printf("Error getting address info: %d\n", err);
-		goto error;
-	}
-
-	struct sockaddr_in dest = *(struct sockaddr_in *)ai->ai_addr;
-	dest.sin_port = htons(1234);
-
-	if (sendto(sock, message, strlen(message), 0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
-		printf("Error sending: %d\n", errno);
-		goto error;
-	}
-
-	close(sock);
-	return true;
-
-error:
-	close(sock);
-	return false;
-}
-
 int min(int a, int b) {
 	if (a < b) {
 		return a;
@@ -89,20 +55,20 @@ int exec_at_cmd(int sock, const char *cmd, char *response, int response_len) {
 	return ret_response_len;
 }
 
-bool set_apn() {
+static bool systemmode_lte() {
 	int sock = socket(AF_LTE, 0, NPROTO_AT);
 	if (sock < 0) {
 		printf("Error opening socket: %d\n", errno);
 		return false;
 	}
 
-	if (exec_at_cmd(sock, "AT+CFUN=1", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGATT=0", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGDCONT=0,\"IP\",\"mda.ee\"", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGDCONT?", NULL, 0) < 0 ||
-		exec_at_cmd(sock, "AT+CGATT=1", NULL, 0) < 0) {
+	if (exec_at_cmd(sock, "AT+CFUN=4", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT%XSYSTEMMODE=1,0,0,0", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT+CFUN=1", NULL, 0) < 0) {
+		printf("Error enabling system mode LTE: %d\n", errno);
 		goto error;
 	}
+
 	while (true) {
 		char resp[32];
 		int n = exec_at_cmd(sock, "AT+CEREG?", resp, sizeof(resp));
@@ -154,7 +120,66 @@ error:
 	return false;
 }
 
+bool set_apn() {
+	int sock = socket(AF_LTE, 0, NPROTO_AT);
+	if (sock < 0) {
+		printf("Error opening socket: %d\n", errno);
+		return false;
+	}
+
+	if (exec_at_cmd(sock, "AT+CFUN=1", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT+CGATT=0", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT+CGDCONT=0,\"IP\",\"mda.ee\"", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT+CGDCONT?", NULL, 0) < 0 ||
+		exec_at_cmd(sock, "AT+CGATT=1", NULL, 0) < 0) {
+		goto error;
+	}
+	while (true) {
+		char resp[32];
+		int n = exec_at_cmd(sock, "AT+CEREG?", resp, sizeof(resp));
+		if (n < 0) {
+			goto error;
+		}
+		if (n >= 10 && memcmp(resp, "+CEREG", 6) == 0 && resp[10] == '1') {
+			break;
+		}
+	}
+
+	close(sock);
+	return true;
+
+error:
+	close(sock);
+	return false;
+}
+
+bool send_message(const char *message) {
+	int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sock < 0) {
+		printf("Error opening socket: %d\n", errno);
+		return false;
+	}
+
+	static struct sockaddr_in remote_addr = {
+		sin_family: AF_INET,
+		sin_port:   htons(1234),
+	};
+	net_addr_pton(AF_INET, "172.16.15.14", &remote_addr.sin_addr);
+
+	if (sendto(sock, message, strlen(message), 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0) {
+		printf("Error sending: %d\n", errno);
+		return false;
+	}
+
+	return true;
+}
+
 void main() {
+	if (!systemmode_lte()) {
+		printf("Failed to set system mode LTE.\n");
+		goto end;
+	}
+
 	printf("Example application started.\n"); 
 
 	if (!print_imei_imsi()) {
@@ -175,5 +200,5 @@ void main() {
 	printf("Message sent!\n"); 
 
 end:
-	printf("Tutorial application complete.\n"); 
+	printf("Example application complete.\n"); 
 }
