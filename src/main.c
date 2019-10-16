@@ -8,6 +8,8 @@
 #include <at_cmd.h>
 #include <at_cmd_parser.h>
 
+#include "orientation_detector.h"
+
 K_SEM_DEFINE(registered_on_network_sem, 0, 1);
 
 static void at_cmd_notification_handler(char *response) {
@@ -123,7 +125,67 @@ bool send_message(const char *message) {
 	return true;
 }
 
+static struct k_delayed_work flip_work;
+
+static void do_flip_work(struct k_work *work) {
+	static enum orientation_state last_orientation_state = ORIENTATION_NOT_KNOWN;
+	static struct orientation_detector_sensor_data sensor_data;
+
+	if (orientation_detector_poll(&sensor_data) == 0) {
+		if (sensor_data.orientation == last_orientation_state) {
+			goto exit;
+		}
+
+		if (last_orientation_state != ORIENTATION_NOT_KNOWN) {
+			switch (sensor_data.orientation) {
+			case ORIENTATION_NORMAL:
+				send_message("Right side up.");
+				break;
+			case ORIENTATION_UPSIDE_DOWN:
+				send_message("Upside down.");
+				break;
+			default:
+				goto exit;
+			}
+		}
+
+		last_orientation_state = sensor_data.orientation;
+	}
+
+exit:
+	k_delayed_work_submit(&flip_work, K_MSEC(10));
+}
+
+/**@brief Initializes flip detection using orientation detector module
+ * and configured accelerometer device.
+ */
+static void flip_detection_init(void)
+{
+	int err;
+	struct device *accel_dev =
+		device_get_binding(CONFIG_ACCEL_DEV_NAME);
+
+	if (accel_dev == NULL) {
+		printk("Could not get %s device\n", CONFIG_ACCEL_DEV_NAME);
+		return;
+	}
+
+	orientation_detector_init(accel_dev);
+
+	if (IS_ENABLED(CONFIG_ACCEL_CALIBRATE)) {
+		err = orientation_detector_calibrate();
+		if (err) {
+			printk("Could not calibrate accelerometer device: %d\n", err);
+		}
+	}
+
+	k_delayed_work_init(&flip_work, do_flip_work);
+	k_delayed_work_submit(&flip_work, K_NO_WAIT);
+}
+
 void main() {
+	printf("Hackathon application started.\n"); 
+
 	if (!subscribe_network_status_notifications()) {
 		goto end;
 	}
@@ -132,8 +194,6 @@ void main() {
 		printf("Failed to set system mode LTE.\n");
 		goto end;
 	}
-
-	printf("Example application started.\n"); 
 
 	if (!print_imei_imsi()) {
 		printf("Failed to get IMEI/IMSI.\n");
@@ -146,12 +206,11 @@ void main() {
 	}
 	printf("Connected!\n"); 
 
-	if (!send_message("Hello, World!")) {
-		printf("Failed to send.\n");
-		goto end;
-	}
-	printf("Message sent!\n"); 
+	flip_detection_init();
+	printf("Flip detection initialized.\n");
+
+	return;
 
 end:
-	printf("Example application complete.\n"); 
+	printf("Hackathon application complete.\n"); 
 }

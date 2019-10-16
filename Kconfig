@@ -1,0 +1,236 @@
+#
+# Copyright (c) 2018 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+#
+
+menu "Thingy example"
+
+menu "Motion"
+
+choice
+	prompt "Accelerometer device"
+	default ACCEL_USE_SIM
+	help
+		Select which device will provide accelerometer data.
+
+config ACCEL_USE_SIM
+	bool "Use simulated accelerometer data"
+	select SENSOR
+	select SENSOR_SIM
+	select SENSOR_SIM_TRIGGER
+	select SENSOR_SIM_STATIC_VALUES
+	help
+		Use sensor simulator to generate accelerometer data for
+		flip detection data sent to nRF Cloud.
+
+config ACCEL_USE_EXTERNAL
+	bool "User provided accelerometer device"
+	help
+		The user will provide an accelerometer device that will
+		be used for flip detection.
+
+endchoice
+
+if ACCEL_USE_SIM
+config ACCEL_DEV_NAME
+	string
+	default SENSOR_SIM_DEV_NAME
+
+config ACCEL_TRIGGER
+	bool
+	default SENSOR_SIM_TRIGGER
+
+config FLIP_INPUT
+	int "Button or switch number to simulate flip"
+	range 1 4 if BOARD_NRF9160_PCA10090NS
+	range 1 1 if BOARD_NRF9160_PCA20035NS
+	default 3 if BOARD_NRF9160_PCA10090NS
+	default 1 if BOARD_NRF9160_PCA20035NS
+	help
+		Button or switch number to use for simulating
+		a board flip event.
+		1 - Button 1
+		2 - Button 2
+		3 - Switch 1
+		4 - Switch 2
+endif
+
+config FLIP_POLL
+	bool "Use polling to detect flip"
+	help
+		Poll the defined accelerometer device at interval determined by
+		FLIP_POLL_INTERVAL. Data will be sent to nRF Cloud if a flip
+		has happened and the orientation thus has changed.
+
+if FLIP_POLL
+config FLIP_POLL_INTERVAL
+	int "Flip detection poll interval"
+	default 1000
+	help
+		Flip polling interval in milliseconds.
+endif
+
+if ACCEL_USE_EXTERNAL
+
+config ACCEL_DEV_NAME
+	string "Accelerometer device name"
+	help
+		Device from which accelerometer data will be fetched and used
+		for orientation detection and sent to nRF Cloud.
+
+endif
+
+config ACCEL_INVERTED
+	bool "Accelerometer inverted"
+	default y if BOARD_NRF9160_PCA20035NS
+	help
+		Enable if the accelerometer is mounted with the top side facing
+		down when the board itself is in normal position.
+
+config ACCEL_CALIBRATE
+	bool "Calibrate accelerometer"
+	help
+		Calibrate the accelerometer on a flat surface to filter away
+		static measurement offset that could affect orientation
+		detection.
+
+if ACCEL_CALIBRATE
+config ACCEL_CALIBRATION_ITERATIONS
+	int "Number of readings for calibration"
+	default 20 if BOARD_NRF9160_PCA20035NS
+	help
+		Number of measurement readings to average over to find the
+		static offset in the readings when calibrating the
+		accelerometer.
+
+config CALIBRATION_INPUT
+	int "Button to trigger accelerometer calibration"
+	range 1 2 if BOARD_NRF9160_PCA10090NS
+	range 1 1 if BOARD_NRF9160_PCA20035NS
+	default 1 if BOARD_NRF9160_PCA10090NS
+	default 1 if BOARD_NRF9160_PCA20035NS
+	help
+		Button number to use to trigger accelerometer calibration:
+		1 - Button 1
+		2 - Button 2
+endif
+
+if !ACCEL_CALIBRATE
+config ACCEL_CALIBRATION_ITERATIONS
+	int
+	default 0
+endif
+
+config ACCEL_ITERATIONS
+	int "Number of readings per measurement"
+	default 20 if BOARD_NRF9160_PCA20035NS
+	default 1
+	help
+		Number of measurement readings to average over for each time
+		the orientation detector determines the orientation of the
+		board. Used for simple filtering of noisy measurements.
+
+endmenu # Motion
+
+menu "Environment sensors"
+
+config USE_BME680_BSEC
+	bool "Use Bosch BME680 BSEC lib"
+	default n
+	help
+	  Enable use of Bosch BSEC library. The library itself is not a part of
+	  NCS and must be downloaded from Bosch Sensortec.
+
+config BOSCH_BSEC_LIBRARY_PATH
+	string "Path to Bosch BSEC library folder"
+	default "$(ZEPHYR_BASE)/../nrf/ext/BSEC_1.4.7.4_Generic_Release"
+	help
+	  Path to the folder where the Bosch BSEC library is placed.
+
+config ENVIRONMENT_DATA_SEND_INTERVAL
+	int "Interval in seconds for sending environment data"
+	default 30
+	help
+	  Interval between each sampling and sending of environment sensor data.
+	  If the GPS is active, sensor data will not be sent before it is
+	  stopped. The unit is seconds.
+
+config ENVIRONMENT_DATA_BACKOFF_TIME
+	int "Time to delay sending environment data if GPS active"
+	default 20
+	help
+	  Time in seconds before retrying to send environment sensor data if
+	  the GPS is active.
+
+choice
+	prompt "Temperature measurement device"
+	default TEMP_USE_SIM
+	help
+		Select which device will provide temperature data.
+
+config TEMP_USE_SIM
+	bool "Use simulated temperature data"
+	select SENSOR
+	select SENSOR_SIM
+	help
+		Use sensor simulator to generate temperature data to send to
+		nRF Cloud.
+
+config TEMP_USE_EXTERNAL
+	bool "User provided temperature device"
+	help
+		The user provides a temperature device that is
+		used for temperature measurement.
+
+endchoice
+
+if TEMP_USE_SIM
+config TEMP_DEV_NAME
+	string
+	default SENSOR_SIM_DEV_NAME
+
+config TEMP_TRIGGER
+	bool
+	default SENSOR_SIM_TRIGGER
+
+config TEMP_SIM_BUTTON
+	int "Button or switch to trigger 'data ready' event"
+	range 1 4 if BOARD_NRF9160_PCA10090NS
+	range 1 1 if BOARD_NRF9160_PCA20035NS
+	default 3 if BOARD_NRF9160_PCA10090NS
+	default 1 if BOARD_NRF9160_PCA20035NS
+	help
+		Button or switch number to use for triggering
+		a 'data ready' event.
+		1 - Button 1
+		2 - Button 2
+		3 - Switch 1
+		4 - Switch 2
+endif
+
+if TEMP_USE_EXTERNAL
+
+config TEMP_DEV_NAME
+	string "Temperature device name"
+	help
+		Device from which temperature data will be fetched and
+		sent to nRF Cloud.
+
+endif
+
+endmenu # Environment sensors
+
+config USE_AT_HOST
+	bool "Enable AT commands"
+	default y
+	select AT_HOST_LIBRARY
+	help
+		Enable the AT host library so that AT commands can be sent to and
+		received from a serial terminal.
+
+endmenu
+
+menu "Zephyr Kernel"
+source "$ZEPHYR_BASE/Kconfig.zephyr"
+endmenu
