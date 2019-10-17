@@ -11,7 +11,9 @@ target_sources(app PRIVATE src/main.c)
 zephyr_include_directories(src)
 
 zephyr_library_include_directories(
-  src/orientation_detector
+	src/ui
+	src/orientation_detector
   )
 
-add_subdirectory(src/orientation_detector)
+  add_subdirectory(src/ui)
+  add_subdirectory(src/orientation_detector)

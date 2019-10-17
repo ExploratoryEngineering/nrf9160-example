@@ -8,6 +8,7 @@
 #include <at_cmd.h>
 #include <at_cmd_parser.h>
 
+#include "ui.h"
 #include "orientation_detector.h"
 
 K_SEM_DEFINE(registered_on_network_sem, 0, 1);
@@ -186,6 +187,9 @@ static void flip_detection_init(void)
 void main() {
 	printf("Hackathon application started.\n"); 
 
+	ui_init(NULL);
+	ui_led_set_pattern(UI_CLOUD_CONNECTING);
+
 	if (!subscribe_network_status_notifications()) {
 		goto end;
 	}
@@ -205,6 +209,7 @@ void main() {
 		goto end;
 	}
 	printf("Connected!\n"); 
+	ui_led_set_pattern(UI_CLOUD_CONNECTED);
 
 	flip_detection_init();
 	printf("Flip detection initialized.\n");
